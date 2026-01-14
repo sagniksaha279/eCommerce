@@ -226,14 +226,21 @@ app.get(
   passport.authenticate("google", { scope: ["profile", "email"] })
 );
 
-app.get(
-  "/auth/google/callback",
-  passport.authenticate("google", { session: false, failureRedirect: "/login" }),
-  (req, res) => {
-    const token = generateAccessToken(req.user);
-    res.cookie("token", token, { httpOnly: true, secure: true });
-    res.redirect("/profile");
-  }
+app.get("/auth/google/callback",passport.authenticate("google", { failureRedirect: "/login" }),(req, res) => {
+        db.query("SELECT * FROM users WHERE id = ?", [req.user.id], (err, results) => {
+            if (err || !results.length) 
+                return res.redirect("/login");
+            const user = results[0];
+            const userData = { id: user.id, email: user.email, name: user.name, avatar: user.avatar || '/images/default-avatar.png',
+                google_id: user.google_id, address: user.address,role: user.role
+            };
+        
+            const token = generateAccessToken(userData);
+            res.cookie("token", token, { httpOnly: true });
+            
+            res.redirect("/profile");
+        });
+    }
 );
 
 /**
