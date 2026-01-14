@@ -27,7 +27,7 @@ app.use(cookieParser());
 app.set("trust proxy", 1);
 // Session configuration (REQUIRED for Passport)
 app.use(session({
-  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
