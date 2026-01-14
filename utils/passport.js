@@ -3,7 +3,7 @@ const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const db = require("./db");
 
-const server = "http://e-commerce-279.vercel.app";
+const server = "https://e-commerce-279.vercel.app";
 
 passport.use(
     new GoogleStrategy(
