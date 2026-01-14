@@ -1,0 +1,115 @@
+<div class="overlay" id="overlay"></div>
+
+<nav class="navbar navbar-expand-lg navbar-dark px-4 py-3 fixed-top" style="background:#0b2a6f;">
+    <button class="toggleBtn me-3" id="toggleSidebar" aria-label="Toggle Sidebar">
+        <i class="bi bi-list"></i>
+    </button>
+
+    <a class="navbar-brand fw-bold fs-3" href="/">Company</a>
+    
+    <button class="search-toggle" id="searchToggle" aria-label="Toggle Search">
+        <i class="bi bi-search"></i>
+    </button>
+
+    <button class="navbar-toggler ms-auto" type="button"aria-controls="mainNavbar" aria-expanded="false" aria-label="Toggle navigation">
+        <i class="bi bi-three-dots-vertical text-white fs-3"></i>
+        <i class="bi bi-x text-white fs-3"></i>
+    </button>
+
+    <div class="search-expanded" id="searchExpanded">
+        <form class="search-bar d-flex align-items-center">
+            <input type="text" class="search-input" placeholder="Search...">
+            <div class="search-category-wrapper">
+                <div class="search-category-selected">All categories</div>
+                <ul class="search-category-options">
+                    <li>Bike Parts</li>
+                    <li>Car Parts</li>
+                    <li>Accessories</li>
+                </ul>
+            </div>
+            <button type="submit" class="search-btn">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+    </div>
+
+    <div class="collapse navbar-collapse" id="mainNavbar">
+        <form class="search-bar d-flex align-items-center ms-lg-4 my-3 my-lg-0">
+            <input type="text" class="search-input" placeholder="Search...">
+            <select class="search-category">
+                <option>All categories</option>
+                <option>Bike Parts</option>
+                <option>Car Parts</option>
+                <option>Accessories</option>
+            </select>
+            <button type="submit" class="search-btn">
+                <i class="bi bi-search"></i>
+            </button>
+        </form>
+
+        <ul class="navbar-nav ms-auto align-items-lg-center gap-lg-3">
+            
+            <li class="nav-item d-none d-lg-block">
+                <a class="nav-link d-flex align-items-center account-btn" href="#" id="accountBtn">
+                    <% 
+                        let avatarURL = '/images/default-avatar.png';
+                        if (user) {
+                            if (user.google_id && user.google_avatar) {
+                                avatarURL = user.google_avatar;
+                            } else if (user.avatar && user.avatar !== 'null') {
+                                avatarURL = user.avatar;
+                            }
+                        }
+                    %>
+                    <img src="<%= avatarURL %>" 
+                        class="rounded-circle me-2" 
+                        width="32" height="32" 
+                        alt="<%= user.name %>" 
+                        onerror="this.onerror=null; this.src='/images/default-avatar.png';"
+                        style="object-fit: cover; border: 1px solid #dee2e6;">
+                    <span><%= user ? user.name : "My Account" %></span>
+                </a>
+            </li>
+
+            <li class="nav-item d-lg-none">
+                <a class="nav-link d-flex align-items-center account-btn" href="#" id="mobileAccountBtn">
+                    <i class="bi bi-person-circle fs-4 me-1"></i>
+                    <span>My Account</span>
+                </a>
+                <div class="mobile-account" id="mobileAccount">
+                    <ul>
+                        <% if (!user) { %>
+                            <li><a href="/login"><i class="bi bi-box-arrow-in-right"></i> Login / Signup</a></li>
+                        <% } else { %>
+                            <li><a href="/profile"><i class="bi bi-person"></i> Profile</a></li>
+                            <li><a href="/orders"><i class="bi bi-receipt"></i> Orders</a></li>
+                            <li><a href="/logout"><i class="bi bi-box-arrow-left"></i> Logout</a></li>
+                        <% } %>
+                    </ul>
+                </div>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link cart-link position-relative d-flex align-items-center gap-2" href="/cart">
+                    <i class="bi bi-cart3 fs-4" class="cart-icon"></i>
+                    <span class="fw-semibold">Cart</span>
+                    <span class="cart-badge"><%= user ? cartCount : 0 %></span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</nav>
+
+<div class="account-panel" id="accountPanel">
+    <ul>
+        <li><a href="/"><i class="bi bi-house-door-fill me-1"></i>Home</a></li>
+
+        <% if (!user) { %>
+            <li><a href="/login"><i class="bi bi-box-arrow-in-right"></i> Login / Signup</a></li>
+        <% } else { %>
+            <li><a href="/profile"><i class="bi bi-person"></i> Profile</a></li>
+            <li><a href="/orders"><i class="bi bi-receipt"></i> Orders</a></li>
+            <li><a href="/logout"><i class="bi bi-box-arrow-left"></i> Logout</a></li>
+        <% } %>
+    </ul>
+</div>

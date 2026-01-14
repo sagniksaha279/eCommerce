@@ -1,0 +1,132 @@
+<link rel="stylesheet" href="/css/profile.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+        <div class="profile-card">
+            <% if (!user) { %>
+                <p><%= message %></p>
+                <a href="/login">Login</a>
+            <% } else { %>
+                <div class="avatar-container">
+            <% 
+                let avatarURL = '/images/default-avatar.png';
+                if (user) {
+                    if (user.google_id && user.google_avatar) {
+                        avatarURL = user.google_avatar;
+                    } else if (user.avatar && user.avatar !== 'null') {
+                        avatarURL = user.avatar;
+                    }
+                }
+            %>
+            <img class="avatar" 
+                src="<%= avatarURL %>" 
+                alt="User Avatar" 
+                onerror="this.onerror=null; this.src='/images/default-avatar.png';"
+                style="object-fit: cover;">
+            <div class="camera-icon" onclick="showUploadMessage()">
+                <i class="fas fa-camera"></i>
+            </div>
+        </div>
+
+
+        <h2><%= user.name %></h2>
+        <p><%= user.email %></p>
+        
+        <div class="member-info">
+            <p><i class="fas fa-calendar-alt"></i> Member since: <%= new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) %></p>
+        </div>
+        
+        <div class="security-status">
+            <div class="status-item">
+                <i class="fas fa-check-circle"></i> Email Verified
+            </div>
+            <div class="status-item">
+                <i class="fas fa-check-circle"></i> Profile Complete
+            </div>
+            <% if (user.address) { %>
+                <div class="status-item">
+                    <i class="fas fa-check-circle"></i> Address Added
+                </div>
+            <% } %>
+        </div>
+        
+        <% if (user && user.google_id) { %>
+            <div class="google-auth-section">
+                <h4><i class="fab fa-google"></i> Google Authentication</h4>
+                <div class="auth-card">
+                    <p>Your account is secured with Google Sign-In</p>
+                    <div class="auth-status">
+                        <span class="status-badge">
+                            <i class="fas fa-check-circle"></i> Active
+                        </span>
+                    </div>
+                </div>
+                <p class="auth-note">
+                    <i class="fas fa-info-circle"></i> 
+                    Password management is handled by Google. To change your password, visit your Google Account settings.
+                </p>
+            </div>
+        <% } %>
+        
+        <div class="last-login">
+            <div class="login-time">
+                <i class="fas fa-clock"></i>
+                <div class="time-info">
+                    <span class="label">Last Login</span>
+                    <span class="time" id="dynamicTime">Loading...</span>
+                </div>
+            </div>
+            <div class="login-status active">
+                <i class="fas fa-circle"></i>
+                <span>Active now</span>
+            </div>
+        </div>
+
+        <h4>📍 Address</h4>
+        <p><%= user.address || "No address added yet" %></p>
+
+        <h4>✏️ Update Address</h4>
+        <form action="/update-address" method="POST" class="update-address-form">
+            <button type="button" class="location-btn" onclick="getCurrentLocation()">📍 Use Current Location</button>
+            <textarea name="address" placeholder="Enter your complete address" rows="3" ><%= user.address || '' %></textarea>
+            <button type="submit" class="update-btn">Update Address</button>
+        </form>
+        
+        <h4>👀 Recently Viewed</h4>
+        <div class="recent">
+            <% if (user.recent && user.recent.length) { %>
+                <% user.recent.forEach(p => { %>
+                    <div class="product">
+                        <img src="<%= p.image %>">
+                        <p><%= p.name %></p>
+                    </div>
+                <% }) %>
+            <% } else { %>
+                <p class="muted">No recently viewed products</p>
+            <% } %>
+        </div>
+
+        <h4>❤️ Wishlist</h4>
+        <% if (user.wishlist && user.wishlist.length) { %>
+            <a href="/wishlist">View Wishlist</a>
+        <% } else { %>
+            <p class="muted">No items in wishlist</p>
+        <% } %>
+
+        <% if (user && !user.google_id) { %>
+            <h4>🔐 Change Password</h4>
+
+            <form action="/change-password" method="POST" class="change-password-form">
+                <input type="password" name="currentPassword" placeholder="Current password" required/>
+                <input type="password" name="newPassword" placeholder="New password" required/>
+                <input type="password" name="confirmPassword" placeholder="Confirm new password" required/>
+                <button type="submit" class="change-btn">Update Password</button>
+            </form>
+        <% } else if (user && user.google_id) { %>
+            <p class="muted">You signed in with Google. Password change is not required.</p>
+        <% } %>
+        
+        <a href="/logout" class="logout">Logout</a>
+    <% } %>
+</div>
+
+<script src="/js/profile.js"></script>

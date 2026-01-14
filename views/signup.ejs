@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Register</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/auth.css">
+</head>
+<body>
+
+<div class="auth-container">
+    <div class="auth-card">
+        <h2 class="text-center mb-4">Create Account ✨</h2>
+
+        <% if (locals.message) { %>
+            <div class="alert alert-warning text-center mb-3">
+                <%= locals.message %>
+            </div>
+        <% } %>
+
+        <form action="/signup" method="POST" id="signupForm">
+            <div class="form-floating mb-3">
+                <input type="text" name="name" class="form-control" placeholder="Name" required>
+                <label>Full Name</label>
+            </div>
+
+            <div class="form-floating mb-3">
+                <input type="email" name="email" id="emailInput" class="form-control" placeholder="Email" required>
+                <label>Email address</label>
+            </div>
+
+            <button type="button" id="sendOtpBtn" class="btn btn-outline-primary w-100 mb-2">
+                Send OTP
+            </button>
+
+            <p id="otpStatus" class="text-center mb-2" style="display:none;"></p>
+
+            <div class="form-floating mb-3" id="otpBox" style="display:none;">
+                <input type="text" id="otpInput" class="form-control" placeholder="OTP" required>
+                <label>Enter OTP</label>
+            </div>
+
+            <button type="button" id="verifyOtpBtn" class="btn btn-outline-success w-100 mb-3" style="display:none;">
+                Verify OTP
+            </button>
+
+            <div id="restFields" style="display:none;">
+                <div class="form-floating mb-3 position-relative">
+                    <input type="password" name="password" class="form-control" placeholder="Password" id="registerPassword" required>
+                    <label>Password</label>
+                    <i class="bi bi-eye toggle-password" onclick="togglePassword('registerPassword')"></i>
+                </div>
+
+                <input type="text" name="address" class="form-control mb-3" placeholder="Address">
+
+                <button class="btn btn-primary w-100 mb-3">Create Account</button>
+            </div>
+
+            <p class="text-center mt-3">
+                Already have an account?
+                <a href="/login">Login</a>
+            </p>
+        </form>
+    </div>
+</div>
+
+<script src="/js/signup.js"></script>
+
+</body>
+</html>
