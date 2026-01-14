@@ -10,7 +10,7 @@ require("dotenv").config();
 require("../utils/passport.js");
 
 const jwt = require("jsonwebtoken");
-const db = require("../utils/db.js");
+const db = require("../utils/db.js"); // pooled DB
 const auth = require("../middlewares/auth.js");
 const authOptional = require("../middlewares/authOptional.js");
 const { sendOTP, verifyOTP } = require("../utils/mailer.js");
@@ -24,7 +24,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-app.use(passport.initialize()); // ❌ no session()
+app.use(passport.initialize());
 
 app.set("view engine", "ejs");
 app.use(expressLayouts);
@@ -58,7 +58,6 @@ const guestOnly = (req, res, next) => {
   }
 };
 
-// OTP cooldown (serverless-safe enough for short time)
 const otpCooldown = new Map();
 
 // ================== ROUTES ==================
@@ -68,13 +67,16 @@ app.get("/", (req, res) => res.render("home"));
 app.get("/signup", guestOnly, (req, res) => res.render("signup"));
 
 /**
- * OTP VERIFY → ISSUE TEMP TOKEN
+ * VERIFY OTP
  */
-app.post("/verify-otp", (req, res) => {
+app.post("/verify-otp", async (req, res) => {
   const { email, otp } = req.body;
 
-  db.query("SELECT id FROM users WHERE email=?", [email], (err, rows) => {
-    if (err) return res.json({ success: false });
+  try {
+    const rows = await db.query(
+      "SELECT id FROM users WHERE email=?",
+      [email]
+    );
 
     if (rows.length)
       return res.json({ success: false, reason: "user_exists" });
@@ -95,7 +97,10 @@ app.post("/verify-otp", (req, res) => {
     });
 
     res.json({ success: true });
-  });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
 /**
@@ -108,8 +113,11 @@ app.post("/send-otp", async (req, res) => {
   if (lastSent && Date.now() - lastSent < 30000)
     return res.json({ success: false, reason: "cooldown" });
 
-  db.query("SELECT * FROM users WHERE email=?", [email], async (err, users) => {
-    if (err) return res.json({ success: false });
+  try {
+    const users = await db.query(
+      "SELECT id FROM users WHERE email=?",
+      [email]
+    );
 
     if (users.length)
       return res.json({ success: false, reason: "user_exists" });
@@ -117,7 +125,10 @@ app.post("/send-otp", async (req, res) => {
     await sendOTP(email);
     otpCooldown.set(email, Date.now());
     res.json({ success: true });
-  });
+  } catch (err) {
+    console.error(err);
+    res.json({ success: false });
+  }
 });
 
 /**
@@ -138,16 +149,20 @@ app.post("/signup", async (req, res) => {
   if (decoded.email !== email)
     return res.render("signup", { message: "OTP mismatch" });
 
-  const hashed = await bcrypt.hash(password, 10);
+  try {
+    const hashed = await bcrypt.hash(password, 10);
 
-  db.query(
-    "INSERT INTO users (name,email,password,address) VALUES (?,?,?,?)",
-    [name, email, hashed, address || null],
-    () => {
-      res.clearCookie("otpToken");
-      res.redirect("/login");
-    }
-  );
+    await db.query(
+      "INSERT INTO users (name,email,password,address) VALUES (?,?,?,?)",
+      [name, email, hashed, address || null]
+    );
+
+    res.clearCookie("otpToken");
+    res.redirect("/login");
+  } catch (err) {
+    console.error(err);
+    res.render("signup", { message: "Signup failed" });
+  }
 });
 
 /**
@@ -157,11 +172,16 @@ app.get("/login", guestOnly, (req, res) =>
   res.render("login", { message: null })
 );
 
-app.post("/login", (req, res) => {
+app.post("/login", async (req, res) => {
   const { email, password, remember } = req.body;
 
-  db.query("SELECT * FROM users WHERE email=?", [email], async (err, users) => {
-    if (err || !users.length) return res.redirect("/login");
+  try {
+    const users = await db.query(
+      "SELECT * FROM users WHERE email=?",
+      [email]
+    );
+
+    if (!users.length) return res.redirect("/login");
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
@@ -177,7 +197,10 @@ app.post("/login", (req, res) => {
     });
 
     res.redirect("/profile");
-  });
+  } catch (err) {
+    console.error(err);
+    res.redirect("/login");
+  }
 });
 
 /**
@@ -218,19 +241,27 @@ app.get(
  */
 app.get("/products", (req, res) => res.render("products"));
 
-app.get("/products/:id", authOptional, (req, res) => {
+app.get("/products/:id", authOptional, async (req, res) => {
   const id = req.params.id;
 
-  if (req.user) {
-    db.query(
-      "INSERT INTO recently_viewed (user_id, product_id) VALUES (?,?)",
-      [req.user.id, id]
-    );
-  }
+  try {
+    if (req.user) {
+      await db.query(
+        "INSERT INTO recently_viewed (user_id, product_id) VALUES (?,?)",
+        [req.user.id, id]
+      );
+    }
 
-  db.query("SELECT * FROM products WHERE id=?", [id], (err, product) => {
+    const product = await db.query(
+      "SELECT * FROM products WHERE id=?",
+      [id]
+    );
+
     res.render("product", { product: product[0], user: req.user });
-  });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error");
+  }
 });
 
 /**
