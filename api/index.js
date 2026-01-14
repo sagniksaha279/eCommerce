@@ -4,13 +4,14 @@ const express = require("express");
 const app = express();
 const passport = require("passport");
 const cookieParser = require("cookie-parser");
+const session = require("express-session"); // Added
 const expressLayouts = require("express-ejs-layouts");
 require("dotenv").config();
 
 require("../utils/passport.js");
 
 const jwt = require("jsonwebtoken");
-const db = require("../utils/db.js"); // pooled DB
+const db = require("../utils/db.js");
 const auth = require("../middlewares/auth.js");
 const authOptional = require("../middlewares/authOptional.js");
 const { sendOTP, verifyOTP } = require("../utils/mailer.js");
@@ -24,7 +25,19 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Session configuration (REQUIRED for Passport)
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
 app.use(passport.initialize());
+app.use(passport.session()); // Added for persistent login sessions
 
 app.set("view engine", "ejs");
 app.use(expressLayouts);
@@ -37,9 +50,9 @@ app.use("/models", express.static(path.join(process.cwd(), "models")));
 app.use(authOptional);
 
 app.use((req, res, next) => {
-  if (req.user && !req.user.avatar)
+  if (req.user && !req.user.avatar) {
     req.user.avatar = "/images/default-avatar.png";
-
+  }
   res.locals.user = req.user || null;
   res.locals.cartCount = 0;
   next();
@@ -53,12 +66,25 @@ const guestOnly = (req, res, next) => {
   try {
     jwt.verify(token, process.env.JWT_SECRET);
     return res.redirect("/profile");
-  } catch {
+  } catch (err) {
+    // Invalid token - clear it and continue
+    res.clearCookie("token");
     next();
   }
 };
 
+// OTP cooldown with cleanup
 const otpCooldown = new Map();
+
+// Clean up old entries every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [email, timestamp] of otpCooldown.entries()) {
+    if (now - timestamp > 3600000) { // 1 hour
+      otpCooldown.delete(email);
+    }
+  }
+}, 3600000);
 
 // ================== ROUTES ==================
 
@@ -78,11 +104,21 @@ app.post("/verify-otp", async (req, res) => {
       [email]
     );
 
-    if (rows.length)
-      return res.json({ success: false, reason: "user_exists" });
+    if (rows.length) {
+      return res.status(400).json({ 
+        success: false, 
+        reason: "user_exists",
+        message: "User already exists with this email" 
+      });
+    }
 
     const valid = verifyOTP(email, otp);
-    if (!valid) return res.json({ success: false });
+    if (!valid) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid or expired OTP" 
+      });
+    }
 
     const otpToken = jwt.sign(
       { email, purpose: "signup" },
@@ -92,14 +128,18 @@ app.post("/verify-otp", async (req, res) => {
 
     res.cookie("otpToken", otpToken, {
       httpOnly: true,
-      secure: true,
-      sameSite: "lax"
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: "lax",
+      maxAge: 10 * 60 * 1000 // 10 minutes
     });
 
     res.json({ success: true });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("OTP verification error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Server error during OTP verification" 
+    });
   }
 });
 
@@ -109,9 +149,22 @@ app.post("/verify-otp", async (req, res) => {
 app.post("/send-otp", async (req, res) => {
   const { email } = req.body;
 
+  // Validate email
+  if (!email || !email.includes('@')) {
+    return res.status(400).json({ 
+      success: false, 
+      reason: "invalid_email" 
+    });
+  }
+
   const lastSent = otpCooldown.get(email);
-  if (lastSent && Date.now() - lastSent < 30000)
-    return res.json({ success: false, reason: "cooldown" });
+  if (lastSent && Date.now() - lastSent < 30000) {
+    return res.status(429).json({ 
+      success: false, 
+      reason: "cooldown",
+      retryAfter: Math.ceil((30000 - (Date.now() - lastSent)) / 1000)
+    });
+  }
 
   try {
     const users = await db.query(
@@ -119,15 +172,26 @@ app.post("/send-otp", async (req, res) => {
       [email]
     );
 
-    if (users.length)
-      return res.json({ success: false, reason: "user_exists" });
+    if (users.length) {
+      return res.status(400).json({ 
+        success: false, 
+        reason: "user_exists" 
+      });
+    }
 
     await sendOTP(email);
     otpCooldown.set(email, Date.now());
-    res.json({ success: true });
+    
+    res.json({ 
+      success: true,
+      message: "OTP sent successfully" 
+    });
   } catch (err) {
-    console.error(err);
-    res.json({ success: false });
+    console.error("Send OTP error:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to send OTP" 
+    });
   }
 });
 
@@ -136,41 +200,70 @@ app.post("/send-otp", async (req, res) => {
  */
 app.post("/signup", async (req, res) => {
   const otpToken = req.cookies.otpToken;
-  if (!otpToken) return res.render("signup", { message: "Verify OTP first" });
+  
+  if (!otpToken) {
+    return res.render("signup", { 
+      message: "OTP verification required. Please verify your email first." 
+    });
+  }
 
   let decoded;
   try {
     decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
-  } catch {
-    return res.render("signup", { message: "OTP expired" });
+    if (decoded.purpose !== "signup") {
+      throw new Error("Invalid token purpose");
+    }
+  } catch (err) {
+    res.clearCookie("otpToken");
+    return res.render("signup", { 
+      message: "OTP session expired. Please request a new OTP." 
+    });
   }
 
   const { name, email, password, address } = req.body;
-  if (decoded.email !== email)
-    return res.render("signup", { message: "OTP mismatch" });
+  
+  // Validate input
+  if (!name || !email || !password) {
+    return res.render("signup", { 
+      message: "Name, email, and password are required" 
+    });
+  }
+
+  if (decoded.email !== email) {
+    return res.render("signup", { 
+      message: "Email mismatch with OTP verification" 
+    });
+  }
 
   try {
-    const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 12);
 
     await db.query(
-      "INSERT INTO users (name,email,password,address) VALUES (?,?,?,?)",
+      "INSERT INTO users (name, email, password, address) VALUES (?, ?, ?, ?)",
       [name, email, hashed, address || null]
     );
 
     res.clearCookie("otpToken");
-    res.redirect("/login");
+    res.redirect("/login?message=signup_success");
   } catch (err) {
-    console.error(err);
-    res.render("signup", { message: "Signup failed" });
+    console.error("Signup error:", err);
+    
+    let message = "Signup failed";
+    if (err.code === 'ER_DUP_ENTRY') {
+      message = "Email already exists";
+    }
+    
+    res.render("signup", { message });
   }
 });
 
 /**
  * LOGIN
  */
-app.get("/login", guestOnly, (req, res) =>
-  res.render("login", { message: null })
-);
+app.get("/login", guestOnly, (req, res) => {
+  const message = req.query.message || null;
+  res.render("login", { message });
+});
 
 app.post("/login", async (req, res) => {
   const { email, password, remember } = req.body;
@@ -181,25 +274,36 @@ app.post("/login", async (req, res) => {
       [email]
     );
 
-    if (!users.length) return res.redirect("/login");
+    if (!users.length) {
+      return res.render("login", { 
+        message: "Invalid email or password" 
+      });
+    }
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.redirect("/login");
+    
+    if (!match) {
+      return res.render("login", { 
+        message: "Invalid email or password" 
+      });
+    }
 
     const token = generateAccessToken(user);
 
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === 'production',
       sameSite: "lax",
-      maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : undefined
+      maxAge: remember ? 30 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000
     });
 
     res.redirect("/profile");
   } catch (err) {
-    console.error(err);
-    res.redirect("/login");
+    console.error("Login error:", err);
+    res.render("login", { 
+      message: "Login failed. Please try again." 
+    });
   }
 });
 
@@ -208,75 +312,203 @@ app.post("/login", async (req, res) => {
  */
 app.get("/logout", (req, res) => {
   res.clearCookie("token");
-  res.redirect("/");
+  req.logout((err) => {
+    if (err) console.error("Logout error:", err);
+    res.redirect("/");
+  });
 });
 
 /**
  * PROFILE
  */
-app.get("/profile", auth, (req, res) =>
-  res.render("profile", { user: req.user, message: null })
-);
+app.get("/profile", auth, async (req, res) => {
+  try {
+    // Refresh user data from database
+    const [user] = await db.query(
+      "SELECT * FROM users WHERE id = ?",
+      [req.user.id]
+    );
+    
+    if (!user) {
+      res.clearCookie("token");
+      return res.redirect("/login");
+    }
+    
+    res.render("profile", { 
+      user: { 
+        ...user,
+        avatar: user.avatar || "/images/default-avatar.png"
+      }, 
+      message: null 
+    });
+  } catch (err) {
+    console.error("Profile error:", err);
+    res.status(500).render("error", { message: "Failed to load profile" });
+  }
+});
 
 /**
  * GOOGLE AUTH
  */
 app.get(
   "/auth/google",
-  passport.authenticate("google", { scope: ["profile", "email"] })
+  passport.authenticate("google", { 
+    scope: ["profile", "email"],
+    prompt: "select_account" // Optional: gives user account selection
+  })
 );
 
-app.get("/auth/google/callback",passport.authenticate("google", { failureRedirect: "/login" }),(req, res) => {
-        db.query("SELECT * FROM users WHERE id = ?", [req.user.id], (err, results) => {
-            if (err || !results.length) 
-                return res.redirect("/login");
-            const user = results[0];
-            const userData = { id: user.id, email: user.email, name: user.name, avatar: user.avatar || '/images/default-avatar.png',
-                google_id: user.google_id, address: user.address,role: user.role
-            };
-        
-            const token = generateAccessToken(userData);
-            res.cookie("token", token, { httpOnly: true });
-            
-            res.redirect("/profile");
-        });
+app.get("/auth/google/callback",
+  passport.authenticate("google", { 
+    failureRedirect: "/login",
+    failureMessage: true 
+  }),
+  async (req, res) => {
+    try {
+      // User is authenticated by passport, req.user is set
+      const userData = {
+        id: req.user.id,
+        email: req.user.email,
+        name: req.user.name,
+        avatar: req.user.avatar || '/images/default-avatar.png',
+        google_id: req.user.google_id,
+        address: req.user.address,
+        role: req.user.role
+      };
+
+      const token = generateAccessToken(userData);
+      
+      res.cookie("token", token, { 
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: "lax",
+        maxAge: 24 * 60 * 60 * 1000
+      });
+      
+      res.redirect("/profile");
+    } catch (err) {
+      console.error("Google callback error:", err);
+      res.redirect("/login?message=google_auth_failed");
     }
+  }
 );
 
 /**
  * PRODUCTS
  */
-app.get("/products", (req, res) => res.render("products"));
+app.get("/products", async (req, res) => {
+  try {
+    const products = await db.query(
+      "SELECT * FROM products WHERE available = 1 ORDER BY created_at DESC"
+    );
+    res.render("products", { products, user: req.user });
+  } catch (err) {
+    console.error("Products error:", err);
+    res.status(500).render("error", { message: "Failed to load products" });
+  }
+});
 
 app.get("/products/:id", authOptional, async (req, res) => {
   const id = req.params.id;
 
   try {
-    if (req.user) {
-      await db.query(
-        "INSERT INTO recently_viewed (user_id, product_id) VALUES (?,?)",
-        [req.user.id, id]
-      );
-    }
-
-    const product = await db.query(
-      "SELECT * FROM products WHERE id=?",
+    // Get product first
+    const products = await db.query(
+      "SELECT * FROM products WHERE id=? AND available = 1",
       [id]
     );
 
-    res.render("product", { product: product[0], user: req.user });
+    if (!products.length) {
+      return res.status(404).render("error", { 
+        message: "Product not found" 
+      });
+    }
+
+    const product = products[0];
+
+    // Add to recently viewed if user is logged in
+    if (req.user) {
+      try {
+        // Remove old entries to keep only recent ones
+        await db.query(
+          `DELETE FROM recently_viewed 
+           WHERE user_id = ? AND product_id = ? 
+           OR id IN (
+             SELECT id FROM (
+               SELECT id FROM recently_viewed 
+               WHERE user_id = ? 
+               ORDER BY viewed_at DESC 
+               LIMIT 100 OFFSET 20
+             ) AS old
+           )`,
+          [req.user.id, id, req.user.id]
+        );
+        
+        await db.query(
+          "INSERT INTO recently_viewed (user_id, product_id) VALUES (?,?)",
+          [req.user.id, id]
+        );
+      } catch (err) {
+        console.error("Recently viewed error:", err);
+        // Don't fail the whole request if this fails
+      }
+    }
+
+    res.render("product", { 
+      product, 
+      user: req.user 
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).send("Error");
+    console.error("Product detail error:", err);
+    res.status(500).render("error", { 
+      message: "Failed to load product details" 
+    });
   }
 });
 
 /**
  * CART
  */
-app.get("/cart", (req, res) =>
-  res.json({ working: "is on", timeline: "6 days" })
-);
+app.get("/cart", auth, async (req, res) => {
+  try {
+    const cartItems = await db.query(
+      `SELECT c.*, p.name, p.price, p.image, p.available 
+       FROM cart c 
+       JOIN products p ON c.product_id = p.id 
+       WHERE c.user_id = ? AND p.available = 1`,
+      [req.user.id]
+    );
+    
+    const total = cartItems.reduce((sum, item) => 
+      sum + (item.price * item.quantity), 0);
+    
+    res.render("cart", {
+      cartItems,
+      total: total.toFixed(2),
+      user: req.user
+    });
+  } catch (err) {
+    console.error("Cart error:", err);
+    res.status(500).render("error", { 
+      message: "Failed to load cart" 
+    });
+  }
+});
+
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error("Unhandled error:", err);
+  res.status(500).render("error", { 
+    message: "Something went wrong. Please try again later." 
+  });
+});
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).render("error", { 
+    message: "Page not found" 
+  });
+});
 
 // ================== EXPORT ==================
 module.exports = app;
