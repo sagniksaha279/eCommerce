@@ -87,6 +87,7 @@ setInterval(() => {
 }, 3600000);
 
 // ================== ROUTES ==================
+console.log("API INDEX LOADED");
 
 app.get("/", (req, res) => res.render("home"));
 
@@ -511,7 +512,6 @@ app.use((req, res) => {
 });
 
 // ================== EXPORT ==================
-module.exports = app;
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, () => {
