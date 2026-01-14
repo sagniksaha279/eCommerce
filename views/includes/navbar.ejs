@@ -64,7 +64,7 @@
                     <img src="<%= avatarURL %>" 
                         class="rounded-circle me-2" 
                         width="32" height="32" 
-                        alt="<%= user.name %>" 
+                        alt="<%= user ? user.name : 'Guest' %>" 
                         onerror="this.onerror=null; this.src='/images/default-avatar.png';"
                         style="object-fit: cover; border: 1px solid #dee2e6;">
                     <span><%= user ? user.name : "My Account" %></span>
