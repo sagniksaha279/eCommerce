@@ -10,7 +10,7 @@ const pool = mysql.createPool({
 
   // REQUIRED for cloud MySQL (PlanetScale / Railway)
   ssl: {
-    rejectUnauthorized: true
+    rejectUnauthorized: false
   },
 
   waitForConnections: true,
