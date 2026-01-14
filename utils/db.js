@@ -8,22 +8,36 @@ const pool = mysql.createPool({
   database: process.env.DB_NAME,
   port: process.env.DB_PORT || 3306,
 
-  // REQUIRED for cloud MySQL (PlanetScale / Railway)
+  // FreeDB does NOT provide a full SSL chain
   ssl: {
     rejectUnauthorized: false
   },
 
   waitForConnections: true,
-  connectionLimit: 5,
+  connectionLimit: 3,        // VERY IMPORTANT for FreeDB
   queueLimit: 0,
-  enableKeepAlive: false
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
-// helper query function
+// Simple query helper (used across app)
 async function query(sql, params = []) {
-  const [rows] = await pool.execute(sql, params);
-  return rows;
+  try {
+    const [rows] = await pool.execute(sql, params);
+    return rows;
+  } catch (err) {
+    console.error("DB QUERY ERROR:", err.sqlMessage || err.message);
+    throw err;
+  }
 }
+
+// Graceful shutdown (Render friendly)
+process.on("SIGTERM", async () => {
+  try {
+    await pool.end();
+    console.log("MySQL pool closed");
+  } catch (e) {}
+});
 
 module.exports = {
   query,
